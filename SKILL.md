@@ -31,7 +31,8 @@ All orchestrated via OpenClaw's native cron. No external schedulers needed.
 - GitHub account with public repo token
 - Optional: Privy credentials for Agentic Commerce wallet stubs
 
-## Configuration
+
+- `OPENROUTER_API_KEY` (OpenRouter API key for code generation)## Configuration
 
 Add to your `TOOLS.md`:
 
