@@ -5,6 +5,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 // Paths
+const args = process.argv.slice(2);
+const DRY_RUN = args.includes("--dry-run");
 const WORKSPACE = path.resolve(__dirname, '..');
 const ENV_PATH = path.join(WORKSPACE, '.env');
 const STATE_PATH = path.join(WORKSPACE, 'memory', 'state.json');
@@ -266,6 +268,10 @@ function sleep(ms) {
 
 // Main
 async function main() {
+  if (DRY_RUN) {
+    console.log("DRY RUN MODE — no real repos, GitHub, or Moltbook calls will be made.");
+  }
+
   const state = loadState();
   const today = getToday();
   if (state.date !== today) {
@@ -297,17 +303,17 @@ async function main() {
 
     // Create GitHub repo
     console.log(`Creating GitHub repo: ${repoName}`);
-    const repoInfo = await createGitHubRepo(repoName, description, ['dancetech', track.toLowerCase()]);
+    const repoInfo = DRY_RUN ? { html_url: `https://github.com/arunnadarasa/${repoName}` } : await createGitHubRepo(repoName, description, ['dancetech', track.toLowerCase()]);
     console.log(`Repo URL: ${repoInfo.html_url}`);
 
     // Push code
     console.log('Pushing code...');
-    await pushToGitHub(repoName, files);
+    if (!DRY_RUN) await pushToGitHub(repoName, files);
 
     // Compose and post
     const { title, content } = composePost(track, repoName, repoInfo.html_url);
     console.log('Posting to Moltbook...');
-    const postResponse = await postToMoltbook(title, content);
+    const postResponse = DRY_RUN ? { verification_required: false, post: { id: 0 } } : await postToMoltbook(title, content);
     if (postResponse.verification_required) {
       console.log('Verification required. Solving challenge...');
       const answer = solveChallenge(postResponse.challenge);
