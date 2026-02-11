@@ -191,26 +191,28 @@ async function createGitHubRepo(name, description, topics) {
 
 // Push code to repo
 function pushToGitHub(repoName, files) {
-  const cloneUrl = `https://${env.GITHUB_PUBLIC_TOKEN}@github.com/arunnadarasa/${repoName}.git`;
   const repoDir = path.join(TMP_BASE, repoName);
-  // Clone
-  execSync(`git clone --quiet ${cloneUrl} "${repoDir}"`, { stdio: 'inherit' });
+  // Prepare askpass script to avoid exposing token in command line
+  const askpassScript = path.join(TMP_BASE, `askpass-${repoName}.sh`);
+  fs.writeFileSync(askpassScript, `#!/bin/sh\necho "${env.GITHUB_PUBLIC_TOKEN}"`);
+  fs.chmodSync(askpassScript, 0o700);
+  const gitEnv = { ...process.env, GITHUB_TOKEN: env.GITHUB_PUBLIC_TOKEN, GIT_ASKPASS: askpassScript, GIT_USERNAME: 'x-access-token' };
+  const cloneUrl = `https://github.com/arunnadarasa/${repoName}.git`;
+  execSync(`git clone --quiet ${cloneUrl} "${repoDir}"`, { stdio: 'inherit', env: gitEnv });
   try {
-    // Write files
     Object.entries(files).forEach(([filePath, content]) => {
       const fullPath = path.join(repoDir, filePath);
       fs.mkdirSync(path.dirname(fullPath), { recursive: true });
       fs.writeFileSync(fullPath, content, 'utf8');
     });
-    // Commit and push
-    execSync('git add -A', { cwd: repoDir, stdio: 'inherit' });
-    execSync('git commit -m "Initial commit: DanceTech project"', { cwd: repoDir, stdio: 'ignore' });
-    execSync('git push origin main', { cwd: repoDir, stdio: 'inherit' });
+    execSync('git add -A', { cwd: repoDir, stdio: 'inherit', env: gitEnv });
+    execSync('git commit -m "Initial commit: DanceTech project"', { cwd: repoDir, stdio: 'ignore', env: gitEnv });
+    execSync('git push origin main', { cwd: repoDir, stdio: 'inherit', env: gitEnv });
   } finally {
-    // Cleanup
     try { execSync(`rm -rf "${repoDir}"`); } catch (e) {}
+    try { fs.unlinkSync(askpassScript); } catch (e) {}
   }
-}
+
 
 // Moltbook API
 async function postToMoltbook(title, content) {
