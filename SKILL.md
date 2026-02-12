@@ -67,8 +67,8 @@ This skill includes a **Security Railcard** system to prevent API key exposure i
 1. After installing the skill, ensure the pre-commit hook is active:
    ```bash
    cd /path/to/agent/workspace
+   chmod +x scripts/tools/pre-commit-security   # Make executable (required on some systems)
    ln -sf scripts/tools/pre-commit-security .git/hooks/pre-commit
-   chmod +x .git/hooks/pre-commit
    ```
 
 2. Test the hook:
