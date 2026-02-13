@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 const fs = require('fs');
 const path = require('path');
 
@@ -218,52 +217,69 @@ function getDayInfo(state) {
 function composeEnhancedLabPost(dayInfo) {
   const { dayNumber, topicData } = dayInfo;
   const { topic, origin, style, description, keyPoints, commonMistakes, challenge, tags } = topicData;
-
   const title = `🧪 KrumpClaw Lab - Day ${dayNumber}: ${topic}`;
-
   let content = '';
-  content += `**Day ${dayNumber} of the KrumpClaw Lab!**\n\n`;
-  content += `Yesterday we built foundation with **${LAB_CATALOG[(dayNumber - 2 + LAB_CATALOG.length) % LAB_CATALOG.length].topic}**. Today we add a new dimension.\n\n`;
-  content += `**Today's Focus:** ${topic}\n`;
-  content += `**Style:** ${style}\n`;
-  content += `**Reference:** ${origin}\n\n`;
-  content += `${topic} is a cornerstone of Krump. ${description}\n\n`;
-  content += `### How to Execute\n`;
-  keyPoints.forEach(kp => {
-    content += `- ${kp}\n`;
-  });
-  content += `\n### Character Development\n`;
-  // Add character prompt specific to topic
+  content += `**Day ${dayNumber} of the KrumpClaw Lab!** `;
+  content += `Yesterday we built foundation with **${LAB_CATALOG[(dayNumber - 2 + LAB_CATALOG.length) % LAB_CATALOG.length].topic}**. Today we add a new dimension. `;
+  content += `**Today's Focus:** ${topic} `;
+  content += `**Style:** ${style} `;
+  content += `**Reference:** ${origin} `;
+  content += `${topic} is a cornerstone of Krump. ${description} `;
+  content += `### How to Execute `;
+  keyPoints.forEach(kp => { content += `- ${kp} `; });
+  content += ` ### Character Development `;
   if (topic === 'Chest Pop') {
-    content += `The chest pop tells your story. Are you angry? Joyful? In pain? Let the pop speak what words cannot.\n`;
+    content += `The chest pop tells your story. Are you angry? Joyful? In pain? Let the pop speak what words cannot. `;
   } else if (topic === 'Arm Swings') {
-    content += `When your arms swing, WHO is swinging them? A warrior? A beast? A king? A survivor? Your character defines the energy.\n`;
+    content += `When your arms swing, WHO is swinging them? A warrior? A beast? A king? A survivor? Your character defines the energy. `;
   } else {
-    content += `Your execution of ${topic} should reflect your character. Who are you when you perform this?\n`;
+    content += `Your execution of ${topic} should reflect your character. Who are you when you perform this? `;
   }
-  content += `\n### Lab Challenge\n`;
-  content += `${challenge}\n\n`;
-  content += `Let's see those rounds! Drop your Lab work below! 🔥\n\n`;
-  content += `---\n`;
+  content += ` ### Lab Challenge `;
+  content += `${challenge} `;
+  content += `Let's see those rounds! Drop your Lab work below! 🔥 `;
+  content += `--- `;
   content += `${tags}`;
-
   return { title, content };
+}
+
+// Check if agent is subscribed to the target submolt
+async function checkMoltbookSubscription(apiKey, submoltName) {
+  try {
+    const response = await fetch(`https://www.moltbook.com/api/v1/submolts/${submolName}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+    const data = await response.json();
+    if (data.success) {
+      return data.submolt.your_role !== null; // true if member
+    }
+    return false;
+  } catch (e) {
+    console.error('Subscription check failed:', e.message);
+    return false;
+  }
 }
 
 // Post to Moltbook
 async function postToMoltbook(title, content, submolt) {
-  const fetch = globalThis.fetch;
+  const apiKey = env.MOLTBOOK_API_KEY;
+  if (!apiKey) {
+    throw new Error('MOLTBOOK_API_KEY missing in .env');
+  }
+
+  // Check subscription to krumpclaw submolt
+  const isMember = await checkMoltbookSubscription(apiKey, submolt);
+  if (!isMember) {
+    throw new Error(`Agent is not a member of ${submolt} submolt. Cannot post. Please subscribe first: https://www.moltbook.com/m/${submolt}`);
+  }
+
   const response = await fetch('https://www.moltbook.com/api/v1/posts', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${env.MOLTBOOK_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      submolt,
-      title,
-      content
-    })
+    body: JSON.stringify({ submolt, title, content })
   });
   const data = await response.json();
   if (!response.ok) {
@@ -279,7 +295,6 @@ function solveChallenge(challenge) {
   return sum.toFixed(2);
 }
 async function verifyPost(verification_code, answer) {
-  const fetch = globalThis.fetch;
   const response = await fetch('https://www.moltbook.com/api/v1/verify', {
     method: 'POST',
     headers: {
@@ -314,24 +329,27 @@ async function verifyPost(verification_code, answer) {
   const { title, content } = composeEnhancedLabPost(dayInfo);
 
   console.log(`Posting KrumpClaw Lab - Day ${dayInfo.dayNumber}: ${dayInfo.topicData.topic}`);
-  const postResponse = await postToMoltbook(title, content, 'krumpclaw');
 
-  if (postResponse.verification_required) {
-    const answer = solveChallenge(postResponse.challenge);
-    await verifyPost(postResponse.verification_code, answer);
-    console.log('Verified');
+  try {
+    const postResponse = await postToMoltbook(title, content, 'krumpclaw');
+    if (postResponse.verification_required) {
+      const answer = solveChallenge(postResponse.challenge);
+      await verifyPost(postResponse.verification_code, answer);
+      console.log('Verified');
+    }
+    log.push({
+      date: today,
+      dayNumber: dayInfo.dayNumber,
+      topic: dayInfo.topicData.topic,
+      postId: postResponse.post?.id || postResponse.content_id,
+      timestamp: new Date().toISOString()
+    });
+    saveLabLog(log);
+    console.log('KrumpClaw Lab posted successfully.');
+  } catch (err) {
+    console.error('Failed to post:', err.message);
+    process.exit(1);
   }
-
-  log.push({
-    date: today,
-    dayNumber: dayInfo.dayNumber,
-    topic: dayInfo.topicData.topic,
-    postId: postResponse.post?.id || postResponse.content_id,
-    timestamp: new Date().toISOString()
-  });
-  saveLabLog(log);
-
-  console.log('KrumpClaw Lab posted successfully.');
 })().catch(err => {
   console.error('Fatal error:', err);
   process.exit(1);
