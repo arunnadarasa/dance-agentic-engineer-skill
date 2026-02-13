@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 const fs = require('fs');
 const path = require('path');
 
@@ -23,6 +22,7 @@ const env = loadEnv();
 function getToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
 }
+
 function loadLog() {
   if (fs.existsSync(SESSION_LOG_PATH)) return JSON.parse(fs.readFileSync(SESSION_LOG_PATH, 'utf8'));
   return [];
@@ -40,7 +40,9 @@ const FOUNDATIONS = ['Stomp', 'Jab', 'Chest Pop', 'Arm Swing', 'Groove', 'Footwo
 const CONCEPTS = ['Zones', 'Textures – Fire', 'Textures – Water', 'Textures – Earth', 'In-Between', 'Focus Point', 'Storytelling', 'Musicality', 'Combo', 'Character'];
 const POWER = ['Snatch', 'Smash', 'Whip', 'Spazz', 'Wobble', 'Rumble', 'Get Off', 'Kill Off'];
 
-function randomChoice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function randomChoice(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
 
 // Generate a 2-minute round text notation (approx)
 function generateRound() {
@@ -70,7 +72,7 @@ function pickCharacter() {
 // Compose Saturday Session post
 function composeSessionPost(roundText, character) {
   const title = `#SaturdaySession - Krump Battle Round`;
-  const content = `## Round: ${character} Character\n\n${character} persona: ${getCharacterVibe(character)}\n\n### Choreography (text notation)\n\`\`\`text\n${roundText}\n\`\`\`\n\n### Interpretation\n- The round opens with a strong presence, establishing the ${character}.\n- Uses a mix of foundational and power moves to showcase range.\n- Ends with a Kill Off designed to end the round decisively.\n\n#KrumpClaw #SaturdaySession`;
+  const content = `## Round: ${character} Character\n\n${character} persona: ${getCharacterVibe(character)}\n\n### Choreography (text notation)\n\n\`\`\`text\n${roundText}\n\`\`\`\n\n### Interpretation\n\n- The round opens with a strong presence, establishing the ${character}.\n- Uses a mix of foundational and power moves to showcase range.\n- Ends with a Kill Off designed to end the round decisively.\n\n#KrumpClaw #SaturdaySession`;
   return { title, content };
 }
 
@@ -88,30 +90,58 @@ function getCharacterVibe(char) {
   return vibes[char] || 'A unique character that brings a distinct flavor to the circle.';
 }
 
+// Check if agent is subscribed to the target submolt
+async function checkMoltbookSubscription(apiKey, submoltName) {
+  try {
+    const response = await fetch(`https://www.moltbook.com/api/v1/submolts/${submolName}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+    const data = await response.json();
+    if (data.success) {
+      return data.submolt.your_role !== null; // true if member
+    }
+    return false;
+  } catch (e) {
+    console.error('Subscription check failed:', e.message);
+    return false;
+  }
+}
+
 // Post to Moltbook
 async function postToMoltbook(title, content, submolt) {
-  const fetch = globalThis.fetch;
+  const apiKey = env.MOLTBOOK_API_KEY;
+  if (!apiKey) {
+    throw new Error('MOLTBOOK_API_KEY missing in .env');
+  }
+
+  // Check subscription to krumpclaw submolt
+  const isMember = await checkMoltbookSubscription(apiKey, submolt);
+  if (!isMember) {
+    throw new Error(`Agent is not a member of ${submolt} submolt. Cannot post. Please subscribe first: https://www.moltbook.com/m/${submolt}`);
+  }
+
   const response = await fetch('https://www.moltbook.com/api/v1/posts', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${env.MOLTBOOK_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ submolt, title, content })
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(`Moltbook post failed: ${response.status} ${JSON.stringify(data)}`);
+  if (!response.ok) {
+    throw new Error(`Moltbook post failed: ${response.status} ${JSON.stringify(data)}`);
+  }
   return data;
 }
 
+// Verification
 function solveChallenge(challenge) {
   const numbers = challenge.match(/-?\d+(\.\d+)?/g) || [];
   const sum = numbers.reduce((acc, n) => acc + parseFloat(n), 0);
   return sum.toFixed(2);
 }
-
 async function verifyPost(verification_code, answer) {
-  const fetch = globalThis.fetch;
   const response = await fetch('https://www.moltbook.com/api/v1/verify', {
     method: 'POST',
     headers: {
@@ -132,19 +162,33 @@ async function verifyPost(verification_code, answer) {
     console.log('Saturday Session already posted today. Exiting.');
     process.exit(0);
   }
+
   const round = generateRound();
   const character = pickCharacter();
   const { title, content } = composeSessionPost(round, character);
+
   console.log(`Posting Saturday Session: ${character}`);
-  const postResponse = await postToMoltbook(title, content, 'krumpclaw');
-  if (postResponse.verification_required) {
-    const answer = solveChallenge(postResponse.challenge);
-    await verifyPost(postResponse.verification_code, answer);
-    console.log('Verified');
+
+  try {
+    const postResponse = await postToMoltbook(title, content, 'krumpclaw');
+    if (postResponse.verification_required) {
+      const answer = solveChallenge(postResponse.challenge);
+      await verifyPost(postResponse.verification_code, answer);
+      console.log('Verified');
+    }
+    log.push({
+      date: getToday(),
+      character,
+      round,
+      postId: postResponse.post?.id,
+      timestamp: new Date().toISOString()
+    });
+    saveLog(log);
+    console.log('Saturday Session posted successfully.');
+  } catch (err) {
+    console.error('Failed to post:', err.message);
+    process.exit(1);
   }
-  log.push({ date: getToday(), character, round, postId: postResponse.post?.id, timestamp: new Date().toISOString() });
-  saveLog(log);
-  console.log('Saturday Session posted successfully.');
 })().catch(err => {
   console.error('Fatal error:', err);
   process.exit(1);
