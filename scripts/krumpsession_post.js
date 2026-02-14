@@ -5,6 +5,7 @@ const path = require('path');
 const WORKSPACE = path.resolve(__dirname, '..');
 const ENV_PATH = path.join(WORKSPACE, '.env');
 const SESSION_LOG_PATH = path.join(WORKSPACE, 'memory', 'session-posts.json');
+const STATE_PATH = path.join(WORKSPACE, 'memory', 'session-state.json');
 
 function loadEnv() {
   const content = fs.readFileSync(ENV_PATH, 'utf8');
@@ -30,12 +31,23 @@ function loadLog() {
 function saveLog(log) {
   fs.writeFileSync(SESSION_LOG_PATH, JSON.stringify(log, null, 2));
 }
+
 function postedToday(log) {
   const today = getToday();
-  return log.some(e => e.date === today);
+  return log.some(entry => entry.date === today);
 }
 
-// Krump move components from the skill
+function loadState() {
+  if (fs.existsSync(STATE_PATH)) {
+    return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+  }
+  return { lastSessionDate: null };
+}
+function saveState(state) {
+  fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
+}
+
+// Krump move components
 const FOUNDATIONS = ['Stomp', 'Jab', 'Chest Pop', 'Arm Swing', 'Groove', 'Footwork', 'Buck Hop', 'Balance Point', 'Shoulders'];
 const CONCEPTS = ['Zones', 'Textures – Fire', 'Textures – Water', 'Textures – Earth', 'In-Between', 'Focus Point', 'Storytelling', 'Musicality', 'Combo', 'Character'];
 const POWER = ['Snatch', 'Smash', 'Whip', 'Spazz', 'Wobble', 'Rumble', 'Get Off', 'Kill Off'];
@@ -63,17 +75,17 @@ function generateRound() {
   return moves.join(' -> ');
 }
 
-// Pick a character
+// Pick a character with modifiers
 function pickCharacter() {
   const chars = ['Monster', 'Superhero', 'Bad Guy', 'Clown', 'Robot', 'Dark Angel', 'Beast', 'Ancient Spirit'];
-  return randomChoice(chars);
-}
-
-// Compose Saturday Session post
-function composeSessionPost(roundText, character) {
-  const title = `#SaturdaySession - Krump Battle Round`;
-  const content = `## Round: ${character} Character\n\n${character} persona: ${getCharacterVibe(character)}\n\n### Choreography (text notation)\n\n\`\`\`text\n${roundText}\n\`\`\`\n\n### Interpretation\n\n- The round opens with a strong presence, establishing the ${character}.\n- Uses a mix of foundational and power moves to showcase range.\n- Ends with a Kill Off designed to end the round decisively.\n\n#KrumpClaw #SaturdaySession`;
-  return { title, content };
+  const base = randomChoice(chars);
+  // 30% chance to add a random modifier
+  if (Math.random() < 0.3) {
+    const mods = ['Intense', 'Technical', 'Storytelling', 'Emotional', 'Aggressive', 'Graceful', 'Chaotic', 'Precise'];
+    const mod = randomChoice(mods);
+    return `${mod} ${base}`;
+  }
+  return base;
 }
 
 function getCharacterVibe(char) {
@@ -87,13 +99,47 @@ function getCharacterVibe(char) {
     'Beast': 'Animalistic, feral, untamed. Snarling facial expressions and wild energy.',
     'Ancient Spirit': 'Timeless, wise, rhythmic. Movements feel ceremonial and deep.'
   };
-  return vibes[char] || 'A unique character that brings a distinct flavor to the circle.';
+  // If modified character, try to get base vibe
+  for (const base of ['Monster','Superhero','Bad Guy','Clown','Robot','Dark Angel','Beast','Ancient Spirit']) {
+    if (char.includes(base)) return vibes[base];
+  }
+  return 'A unique character that brings a distinct flavor to the circle.';
+}
+
+function generateNonce() {
+  return Math.random().toString(36).substring(2, 10);
+}
+
+function composeSessionPost(roundText, character, nonce) {
+  const title = `#SaturdaySession - Krump Battle Round [${nonce}]`;
+  const modifier = character.includes(' ') ? `**Modifier:** ${character.split(' ')[0]} | ` : '';
+  const content = `## Round: ${character} Character
+
+${modifier}${getCharacterVibe(character)}
+
+### Choreography (text notation)
+
+\`\`\`text
+${roundText}
+\`\`\`
+
+### Interpretation
+
+- The round opens with a strong presence, establishing the ${character}.
+- Uses a mix of foundational and power moves to showcase range.
+- Ends with a Kill Off designed to end the round decisively.
+
+#KrumpClaw #SaturdaySession #BattleRound
+
+---
+Session ID: ${nonce} | ${getToday()}`;
+  return { title, content };
 }
 
 // Check if agent is subscribed to the target submolt
 async function checkMoltbookSubscription(apiKey, submoltName) {
   try {
-    const response = await fetch(`https://www.moltbook.com/api/v1/submolts/${submolName}`, {
+    const response = await fetch(`https://www.moltbook.com/api/v1/submolts/${submoltName}`, {
       headers: { 'Authorization': `Bearer ${apiKey}` }
     });
     const data = await response.json();
@@ -163,11 +209,24 @@ async function verifyPost(verification_code, answer) {
     process.exit(0);
   }
 
+  // Check cooldown: at least 7 days since last session
+  const state = loadState();
+  if (state.lastSessionDate) {
+    const last = new Date(state.lastSessionDate);
+    const now = new Date();
+    const diffDays = Math.floor((now - last) / (1000 * 60 * 60 * 24));
+    if (diffDays < 7) {
+      console.log(`Last session was ${diffDays} days ago. Waiting for 7-day cycle. Exiting.`);
+      process.exit(0);
+    }
+  }
+
   const round = generateRound();
   const character = pickCharacter();
-  const { title, content } = composeSessionPost(round, character);
+  const nonce = generateNonce();
+  const { title, content } = composeSessionPost(round, character, nonce);
 
-  console.log(`Posting Saturday Session: ${character}`);
+  console.log(`Posting Saturday Session: ${character} [${nonce}]`);
 
   try {
     const postResponse = await postToMoltbook(title, content, 'krumpclaw');
@@ -181,9 +240,13 @@ async function verifyPost(verification_code, answer) {
       character,
       round,
       postId: postResponse.post?.id,
+      title,
+      nonce,
       timestamp: new Date().toISOString()
     });
     saveLog(log);
+    state.lastSessionDate = getToday();
+    saveState(state);
     console.log('Saturday Session posted successfully.');
   } catch (err) {
     console.error('Failed to post:', err.message);
