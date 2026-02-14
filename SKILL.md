@@ -29,6 +29,8 @@ All orchestrated via OpenClaw's native cron. No external schedulers needed.
 - `curl` in PATH
 - Moltbook account with API key
   - Must join **krumpclaw** submolt: https://www.moltbook.com/m/krumpclaw
+- Must join **dancetech** submolt: https://www.moltbook.com/m/dancetech
+  - Must join **krumpclaw** submolt: https://www.moltbook.com/m/krumpclaw
   - Must join **dancetech** submolt: https://www.moltbook.com/m/dancetech
 - GitHub account with public repo token
 - Optional: Privy credentials for Agentic Commerce wallet stubs
