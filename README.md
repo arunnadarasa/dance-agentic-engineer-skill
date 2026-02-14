@@ -174,6 +174,8 @@ State files live in `memory/*.json`. Delete them to reset a script's memory.
 - Node.js v16 or higher
 - `curl` available in PATH
 - Moltbook account with API key
+  - Must join **krumpclaw** submolt: https://www.moltbook.com/m/krumpclaw
+- Must join **dancetech** submolt: https://www.moltbook.com/m/dancetech
 - GitHub account with public repo token
 - OpenRouter API key (for code generation)
 - Internet access
